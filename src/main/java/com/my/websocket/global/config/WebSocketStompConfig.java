@@ -25,19 +25,19 @@ public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
      * 메시지 브로커 옵션 구성
      */
     @Override
-    public void configureMessageBroker(MessageBrokerRegistry config) {
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
 
         // 구독 : 클라이언트가 이 접두사로 시작하는 주제를 구독하여 메시지를 받을 수 있다. (서버 -> 클라이언트)
-        config.enableSimpleBroker("/sub");
+        registry.enableSimpleBroker("/sub");
 
 //        // heartbeat 값 추가 (클라이언트 → 서버, 서버 → 클라이언트) 단위: ms
-//        config.enableSimpleBroker("/sub")
+//        registry.enableSimpleBroker("/sub")
 //                .setHeartbeatValue(new long[]{30000, 30000}) // 30초마다 Ping/Pong 전송
 //                .setTaskScheduler(taskScheduler());  // 스케줄러 추가
 
 
         // 발행 : 이 접두사로 시작하는 메시지는 @MessageMapping이 달린 메서드로 라우팅 된다. (클라이언트 -> 서버)
-        config.setApplicationDestinationPrefixes("/pub");
+        registry.setApplicationDestinationPrefixes("/pub");
     }
 
     /**
