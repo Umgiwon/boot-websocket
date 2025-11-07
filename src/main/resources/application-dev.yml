@@ -1,0 +1,13 @@
+spring:
+
+  thymeleaf:
+    enabled: true
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+    cache: false # 개발 편의상
+
+  devtools:
+    livereload:
+      enabled: true

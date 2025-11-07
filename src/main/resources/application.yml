@@ -3,5 +3,12 @@ server:
 
 
 spring:
-  thymeleaf:
-    cache: false
+  application:
+    name: grc
+
+  profiles:
+    active: dev
+
+  web:
+    resources:
+      static-locations: classpath:/static/
