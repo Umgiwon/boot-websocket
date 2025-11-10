@@ -1,7 +1,6 @@
 server:
   port: 8080
 
-
 spring:
   application:
     name: grc
@@ -9,6 +8,10 @@ spring:
   profiles:
     active: dev
 
-  web:
-    resources:
-      static-locations: classpath:/static/
+#  web:
+#    resources:
+#      static-locations: classpath:/static/
+
+# admin pwd
+device:
+  admin-password: 1234
