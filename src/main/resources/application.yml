@@ -8,9 +8,13 @@ spring:
   profiles:
     active: dev
 
-#  web:
-#    resources:
-#      static-locations: classpath:/static/
+  web:
+    resources:
+      static-locations: classpath:/static/
+
+app:
+  api-key: "miro-grc-api-key"
+
 
 # admin pwd
 device:

@@ -21,7 +21,7 @@ public class TagEventComponent {
      */
     public void publish(DoorEventDto dto) {
 
-        log.info("DoorEventDto : {}", dto);
+        log.info("DoorEventDto : {}", dto.toString());
 
 //        String destination = "/topic/event/" + dto.getDeviceId();
 //        messagingTemplate.convertAndSend(destination, dto);

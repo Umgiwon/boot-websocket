@@ -4,86 +4,262 @@
     <meta charset="UTF-8">
     <title>실시간 출입 현황</title>
 
-    <!-- SockJS / STOMP (실제 위치에 맞게 경로 수정 필요) -->
+    <!-- SockJS / STOMP -->
     <script th:src="@{/common/js/sockjs.min.js}"></script>
     <script th:src="@{/common/js/stomp.min.js}"></script>
+
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 16px; }
+        h2 { margin: 0 0 10px 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+        #toolbar { margin-bottom: 10px; display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+        #left { display: flex; align-items: center; gap: 12px; }
+        #status {
+            font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #ddd;
+            background: #f6f7f9; color: #333;
+        }
+        #status.connected { background: #e8f5e9; color: #1b5e20; border-color: #c8e6c9; }
+        #status.disconnected { background: #ffebee; color: #b71c1c; border-color: #ffcdd2; }
+        #resetBtn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        #resetBtn:hover { background-color: #d32f2f; }
+        .muted { color: #666; font-size: 13px; }
+        .tag { display: inline-block; background: #eef2ff; color: #1e40af; border: 1px solid #c7d2fe; padding: 2px 6px; border-radius: 6px; font-size: 12px; }
+        .in { color: green; font-weight: 700; }
+        .out { color: #d32f2f; font-weight: 700; }
+    </style>
 </head>
 <body>
-    <h2>실시간 출입 현황</h2>
+<div id="toolbar">
+    <div id="left">
+        <h2>실시간 출입 현황</h2>
+        <span id="status" class="disconnected">연결 대기</span>
+    </div>
+    <button id="resetBtn">관리자 설정 초기화</button>
+</div>
 
-    <p>현재 설정된 Device ID: <span id="currentDeviceId"></span></p>
+<p class="muted">
+    현재 설정된 Device ID: <strong id="currentDeviceId" class="tag"></strong>
+</p>
 
-    <table border="1" style="border-collapse: collapse;">
-        <thead>
-        <tr>
-            <th>시간</th>
-            <th>이름</th>
-            <th>구분 (IN/OUT)</th>
-            <th>장비 ID</th>
-        </tr>
-        </thead>
-        <tbody id="eventTableBody">
-        <!-- WebSocket 수신 데이터가 이 안에 추가된다 -->
-        </tbody>
-    </table>
+<table>
+    <thead>
+    <tr>
+        <th>시간</th>
+        <th>이름</th>
+        <th>구분 (IN/OUT)</th>
+        <th>장비 ID</th>
+    </tr>
+    </thead>
+    <tbody id="eventTableBody">
+    <!-- 데이터 표시 영역 -->
+    </tbody>
+</table>
 
-    <script>
-        let stompClient = null;
-        const deviceId = localStorage.getItem("DEVICE_ID");
-        const currentDeviceIdSpan = document.getElementById("currentDeviceId");
-        currentDeviceIdSpan.textContent = deviceId ? deviceId : "(미설정)";
+<script>
+    // ====== 전역 상태 ======
+    let stompClient = null;
+    let reconnectAttempt = 0; // 재연결 백오프 단계
+    const MAX_BACKOFF = 30000; // 최대 30초
+    const WS_ENDPOINT = '/ws'; // WebSocketConfig에서 설정한 엔드포인트
+    const SUB_DEST = '/topic/event'; // 서버에서 브로드캐스트하는 주제
+    const HEARTBEAT_MS = 30000; // 30초 하트비트
 
-        if (!deviceId) {
-            alert("Device ID가 설정되지 않았습니다. 설정 화면으로 이동합니다.");
-            window.location.href = "/setup/admin-password";
-        } else {
-            connectWebSocket();
+    const deviceId = localStorage.getItem("DEVICE_ID");
+    const currentDeviceIdSpan = document.getElementById("currentDeviceId");
+    const resetBtn = document.getElementById("resetBtn");
+    const statusBadge = document.getElementById("status");
+
+    // 표시
+    currentDeviceIdSpan.textContent = deviceId ? deviceId : "(미설정)";
+
+    // 장비 미설정 → 설정 화면 이동
+    if (!deviceId) {
+        alert("Device ID가 설정되지 않았습니다. 설정 화면으로 이동합니다.");
+        window.location.href = "/setup/admin-password";
+    } else {
+        connect(); // 연결 시작
+    }
+
+    // ====== 연결 함수 ======
+    function connect() {
+        // 이미 연결되어 있다면 중복 연결 방지
+        if (stompClient && stompClient.connected) return;
+
+        const socket = new SockJS(WS_ENDPOINT);
+        const client = Stomp.over(socket);
+
+        // 디버깅 로그 비활성화 (필요 시 주석 처리)
+        // client.debug = null;
+
+        // STOMP 하트비트 설정 (핑퐁으로 연결 유지)
+        client.heartbeat.outgoing = HEARTBEAT_MS; // 클라이언트 → 서버
+        client.heartbeat.incoming = HEARTBEAT_MS; // 서버 → 클라이언트
+
+        // onConnect / onError 콜백
+        const onConnect = (frame) => {
+            stompClient = client;
+            setStatus(true, "연결됨");
+            reconnectAttempt = 0; // 성공 시 백오프 초기화
+
+            // 구독
+            stompClient.subscribe(SUB_DEST, (message) => {
+                try {
+                    const event = JSON.parse(message.body);
+                console.log('event.deviceId::', event.deviceId);
+                    // 필드 보정: direction 또는 accessType 중 하나를 IN/OUT로 사용
+                    const dir = ((event.direction || event.accessType || '') + '').toUpperCase();
+                    // 현재 장비의 이벤트만 표시
+                    if (String(event.deviceId) === String(deviceId)) {
+                        addRow({
+                            eventTime: event.eventTime,
+                            userName: event.userName,
+                            direction: dir,
+                            deviceId: event.deviceId
+                        });
+                    }
+                } catch (e) {
+                    console.error("메시지 파싱 오류:", e, message.body);
+                }
+            });
+        };
+
+        const onError = (error) => {
+            console.error("WebSocket 연결 오류:", error);
+            setStatus(false, "연결 끊김 - 재연결 시도중");
+            scheduleReconnect();
+        };
+
+        // 소켓 레벨 close도 캐치해서 재연결
+        socket.onclose = () => {
+            setStatus(false, "연결 종료 - 재연결 시도중");
+            scheduleReconnect();
+        };
+
+        client.connect({}, onConnect, onError);
+    }
+
+    // ====== 재연결 스케줄러 (지수 백오프) ======
+    function scheduleReconnect() {
+        // 페이지가 숨김 상태이면, 사용자에게 보일 때 재연결 시도 (불필요한 트래픽 방지)
+        if (document.hidden) {
+            // 가시화될 때 한 번만 연결 시도
+            const handler = () => {
+                document.removeEventListener('visibilitychange', handler);
+                if (!stompClient || !stompClient.connected) connect();
+            };
+            document.addEventListener('visibilitychange', handler);
+            return;
         }
 
-        function connectWebSocket() {
-            // WebSocketConfig 에서 설정한 엔드포인트(/ws)와 연결
-            const socket = new SockJS('/ws');
-            stompClient = Stomp.over(socket);
+        // 네트워크 오프라인일 경우, 온라인 이벤트 이후 시도
+        if (!navigator.onLine) {
+            const onlineHandler = () => {
+                window.removeEventListener('online', onlineHandler);
+                connect();
+            };
+            window.addEventListener('online', onlineHandler);
+            return;
+        }
 
-            stompClient.connect({}, function (frame) {
-                console.log('Connected: ' + frame);
+        // 백오프 계산 (최대 30초)
+        reconnectAttempt += 1;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_BACKOFF);
+        console.warn(`재연결 ${reconnectAttempt}회차, ${Math.floor(delay/1000)}초 후 시도`);
+        setTimeout(connect, delay);
+    }
 
-                // /topic/events 구독
-                stompClient.subscribe('/topic/event', function (message) {
-                    const event = JSON.parse(message.body);
+    // ====== 상태 표시 ======
+    function setStatus(connected, text) {
+        statusBadge.textContent = text || (connected ? "연결됨" : "연결 끊김");
+        statusBadge.classList.toggle('connected', connected);
+        statusBadge.classList.toggle('disconnected', !connected);
+    }
 
-                    // deviceId가 현재 Device ID와 일치하는 데이터만 테이블에 표시
-                    if (event.deviceId === deviceId) {
-                        addRow(event);
-                    }
-                });
+    // ====== 행 추가 ======
+    function addRow(event) {
+        const tbody = document.getElementById("eventTableBody");
+        const tr = document.createElement("tr");
+
+        // 시간 표시: 서버가 문자열 ISO를 주면 그대로, 없으면 현재 로컬 시간
+        const timeText = event.eventTime
+            ? event.eventTime
+            : new Date().toLocaleString();
+
+        const tdTime = document.createElement("td");
+        tdTime.textContent = timeText;
+
+        const tdUser = document.createElement("td");
+        tdUser.textContent = event.userName || "-";
+
+        const tdType = document.createElement("td");
+        const dir = (event.direction || '').toUpperCase();
+        tdType.textContent = dir || "-";
+        tdType.className = dir === "IN" ? "in" : (dir === "OUT" ? "out" : "");
+
+        const tdDevice = document.createElement("td");
+        tdDevice.textContent = event.deviceId || "-";
+
+        tr.appendChild(tdTime);
+        tr.appendChild(tdUser);
+        tr.appendChild(tdType);
+        tr.appendChild(tdDevice);
+
+        // 최신 데이터가 위로 오도록
+        tbody.insertBefore(tr, tbody.firstChild);
+    }
+
+    // ====== 관리자 설정 초기화 ======
+    resetBtn.addEventListener("click", function () {
+        if (confirm("Device ID를 초기화하고 관리자 설정 화면으로 이동하시겠습니까?")) {
+            localStorage.removeItem("DEVICE_ID");
+            alert("Device ID가 초기화되었습니다.");
+            // 연결 종료 후 이동
+            safeDisconnect(() => {
+                window.location.href = "/setup/admin-password";
             });
         }
+    });
 
-        function addRow(event) {
-            const tbody = document.getElementById("eventTableBody");
-            const tr = document.createElement("tr");
+    // ====== 페이지 이탈 시 깨끗한 종료 ======
+    window.addEventListener('beforeunload', () => {
+        // 즉시 이동해야 하는 경우엔 굳이 기다리지 않아도 됨
+        safeDisconnect();
+    });
 
-            const tdTime = document.createElement("td");
-            tdTime.textContent = event.eventTime || "-";
-
-            const tdUser = document.createElement("td");
-            tdUser.textContent = event.userName || "-";
-
-            const tdDir = document.createElement("td");
-            tdDir.textContent = event.accessType || "-";
-
-            const tdDevice = document.createElement("td");
-            tdDevice.textContent = event.deviceId || "-";
-
-            tr.appendChild(tdTime);
-            tr.appendChild(tdUser);
-            tr.appendChild(tdDir);
-            tr.appendChild(tdDevice);
-
-            // 최근 기록이 위로 쌓이게 하려면 아래 대신 insertBefore 사용
-            tbody.appendChild(tr);
+    function safeDisconnect(cb) {
+        try {
+            if (stompClient && stompClient.connected) {
+                stompClient.disconnect(() => {
+                    setStatus(false, "연결 종료");
+                    if (typeof cb === 'function') cb();
+                });
+            } else if (typeof cb === 'function') {
+                cb();
+            }
+        } catch (e) {
+            console.warn("disconnect 중 오류:", e);
+            if (typeof cb === 'function') cb();
         }
-    </script>
+    }
+
+    // ====== 보조: 오프라인/온라인 표시 & 자동 조치 ======
+    window.addEventListener('offline', () => {
+        setStatus(false, "오프라인 - 네트워크 복구 대기");
+    });
+    window.addEventListener('online', () => {
+        if (!stompClient || !stompClient.connected) {
+            setStatus(false, "온라인 - 재연결 시도중");
+            connect();
+        }
+    });
+</script>
 </body>
 </html>

@@ -28,13 +28,10 @@ public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
     public void configureMessageBroker(MessageBrokerRegistry registry) {
 
         // 구독 : 클라이언트가 이 접두사로 시작하는 주제를 구독하여 메시지를 받을 수 있다. (서버 -> 클라이언트)
-        registry.enableSimpleBroker("/sub");
-
-//        // heartbeat 값 추가 (클라이언트 → 서버, 서버 → 클라이언트) 단위: ms
-//        registry.enableSimpleBroker("/sub")
-//                .setHeartbeatValue(new long[]{30000, 30000}) // 30초마다 Ping/Pong 전송
-//                .setTaskScheduler(taskScheduler());  // 스케줄러 추가
-
+        // heartbeat 값 추가 (클라이언트 → 서버, 서버 → 클라이언트) 단위: ms
+        registry.enableSimpleBroker("/sub")
+                .setHeartbeatValue(new long[]{30000, 30000}) // 30초마다 Ping/Pong 전송
+                .setTaskScheduler(taskScheduler());  // 스케줄러 추가
 
         // 발행 : 이 접두사로 시작하는 메시지는 @MessageMapping이 달린 메서드로 라우팅 된다. (클라이언트 -> 서버)
         registry.setApplicationDestinationPrefixes("/pub");
@@ -51,12 +48,12 @@ public class WebSocketStompConfig implements WebSocketMessageBrokerConfigurer {
                 .withSockJS(); // SockJS를 사용가능하게 함
     }
 
-//    @Bean
-//    public TaskScheduler taskScheduler() {
-//        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-//        scheduler.setPoolSize(1);
-//        scheduler.setThreadNamePrefix("websocket-scheduler-");
-//        scheduler.initialize();
-//        return scheduler;
-//    }
+    @Bean
+    public TaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("websocket-scheduler-");
+        scheduler.initialize();
+        return scheduler;
+    }
 }

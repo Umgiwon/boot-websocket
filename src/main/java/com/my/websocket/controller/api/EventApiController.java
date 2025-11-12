@@ -3,6 +3,7 @@ package com.my.websocket.controller.api;
 import com.my.websocket.domain.dto.DoorEventDto;
 import com.my.websocket.service.TagEventService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,9 +27,9 @@ public class EventApiController {
      * @return 200 OK
      */
     @PostMapping("/door-event")
-    public ResponseEntity<Void> receiveEvent(@RequestBody DoorEventDto dto) {
+    public ResponseEntity<?> receiveEvent(@RequestBody DoorEventDto dto) {
 
         tagEventService.taggingPublish(dto);
-        return ResponseEntity.ok().build();
+        return ResponseEntity.status(HttpStatus.OK).body("{\"success\":true}");
     }
 }

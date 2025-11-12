@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>식수 시스템</title>
+</head>
+<body>
+<script>
+    // localStorage에 Door ID가 저장돼 있는지 확인
+    const doorId = localStorage.getItem("DEVICE_ID");
+
+    if (doorId) {
+        // Door ID가 있으면 메인 화면으로 바로 이동
+        window.location.href = "/main";
+    } else {
+        // 없으면 비밀번호 입력화면으로 이동
+        window.location.href = "/setup/admin-password";
+    }
+</script>
+</body>
+</html>

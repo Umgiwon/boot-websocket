@@ -1,7 +1,6 @@
 package com.my.websocket.domain.dto;
 
-import lombok.Builder;
-import lombok.Data;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -9,7 +8,10 @@ import java.time.LocalDateTime;
  * 출입 이벤트 dto
  */
 @Builder
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class DoorEventDto {
 
     // 장비 ID

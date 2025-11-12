@@ -1,14 +1,15 @@
 package com.my.websocket.domain.dto.request;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
+/**
+ * 비밀번호 검증용 dto
+ */
 @Builder
-@AllArgsConstructor
+@Getter
+@Setter
 @NoArgsConstructor
-@Data
+@AllArgsConstructor
 public class AdminPasswordReqDto {
 
     // 관리자 비밀번호

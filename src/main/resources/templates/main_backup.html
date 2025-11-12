@@ -1,160 +1,125 @@
 <!DOCTYPE html>
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
-    <meta charset="UTF-8"/>
-    <title>Speed Gate 실시간 뷰어</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <!-- WebJars (대체: CDN 사용도 가능) -->
-    <script src="/webjars/sockjs-client/sockjs.min.js"></script>
-    <script src="/webjars/stomp-websocket/stomp.min.js"></script>
+    <meta charset="UTF-8">
+    <title>실시간 출입 현황</title>
+
+    <!-- SockJS / STOMP -->
+    <script th:src="@{/common/js/sockjs.min.js}"></script>
+    <script th:src="@{/common/js/stomp.min.js}"></script>
+
     <style>
-        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,.05);}
-        .row { display: flex; gap: 8px; align-items: center; }
-        input[type=text] { padding: 8px 10px; border-radius: 8px; border: 1px solid #ccc; width: 220px;}
-        button { padding: 8px 12px; border: none; border-radius: 8px; background: #333; color: #fff; cursor: pointer;}
-        button.secondary { background: #666; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff;}
-        .in { background: #2e7d32; }
-        .out { background: #c62828; }
-        .muted { color:#666; font-size: 12px; }
-        .list { margin-top: 16px; }
-        .empty { text-align:center; color:#999; padding: 40px 0; }
+        body { font-family: sans-serif; }
+        h2 { margin-bottom: 10px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+        #toolbar { margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        #resetBtn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        #resetBtn:hover {
+            background-color: #d32f2f;
+        }
     </style>
 </head>
 <body>
-<div class="container">
-    <h2>Speed Gate 실시간 뷰어</h2>
-
-    <div class="card">
-        <div class="row">
-            <input id="deviceIdInput" type="text" placeholder="장비 ID 입력"/>
-            <button id="saveBtn">장비 설정</button>
-            <button id="clearBtn" class="secondary">장비 초기화</button>
-            <span class="muted" id="statusText">대기 중</span>
-        </div>
-        <div style="margin-top:8px" class="muted">
-            현재 장비 ID: <b id="currentDeviceId">-</b>
-        </div>
-    </div>
-
-    <div class="card">
-        <div><b>실시간 이벤트</b></div>
-        <div id="events" class="list">
-            <div class="empty">아직 수신된 이벤트가 없습니다.</div>
-        </div>
-    </div>
+<div id="toolbar">
+    <h2>실시간 출입 현황</h2>
+    <button id="resetBtn">관리자 설정 초기화</button>
 </div>
 
-<script>
-    // ----- LocalStorage 키 정의 -----
-    const LS_KEY = "viewer.deviceId";
+    <p>현재 설정된 Device ID: <strong id="currentDeviceId"></strong></p>
 
-    // ----- 상태 -----
-    let deviceId = null;
-    let stompClient = null;
-    let sub = null;
+    <table>
+        <thead>
+        <tr>
+            <th>시간</th>
+            <th>이름</th>
+            <th>구분 (IN/OUT)</th>
+            <th>장비 ID</th>
+        </tr>
+        </thead>
+        <tbody id="eventTableBody">
+        <!-- 데이터 표시 영역 -->
+        </tbody>
+    </table>
 
-    const deviceIdInput = document.getElementById('deviceIdInput');
-    const saveBtn = document.getElementById('saveBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const currentDeviceId = document.getElementById('currentDeviceId');
-    const statusText = document.getElementById('statusText');
-    const eventsDiv = document.getElementById('events');
+    <script>
+        let stompClient = null;
+        const deviceId = localStorage.getItem("DEVICE_ID");
+        const currentDeviceIdSpan = document.getElementById("currentDeviceId");
+        const resetBtn = document.getElementById("resetBtn");
 
-    // ----- UI 헬퍼 -----
-    function setStatus(text) { statusText.innerText = text; }
-    function setCurrentDeviceId(id) { currentDeviceId.innerText = id || '-'; }
-    function prependEvent(ev) {
-        // 최초 "empty" 제거
-        const empty = eventsDiv.querySelector('.empty');
-        if (empty) empty.remove();
+        currentDeviceIdSpan.textContent = deviceId ? deviceId : "(미설정)";
 
-        const badgeClass = ev.direction === 'IN' ? 'in' : 'out';
-        const time = new Date(ev.receivedAt).toLocaleString();
+        if (!deviceId) {
+            alert("Device ID가 설정되지 않았습니다. 설정 화면으로 이동합니다.");
+            window.location.href = "/setup/admin-password";
+        } else {
+            connectWebSocket();
+        }
 
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-      <div class="row" style="justify-content:space-between;">
-        <div>
-          <span class="badge ${badgeClass}">${ev.direction}</span>
-          <b style="margin-left:8px">${ev.cardNo}</b>
-        </div>
-        <div class="muted">${time}</div>
-      </div>
-      <div style="margin-top:6px">${ev.display}</div>
-      <div class="muted">deviceId: ${ev.deviceId}</div>
-    `;
-        // 맨 위에 추가
-        eventsDiv.prepend(card);
-    }
+        function connectWebSocket() {
+            // WebSocketConfig 에서 설정한 엔드포인트(/ws)와 연결
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
 
-    // ----- STOMP 연결/구독 -----
-    function connectAndSubscribe(id) {
-        if (!id) return;
+            stompClient.connect({}, function (frame) {
+                console.log('Connected: ' + frame);
 
-        // 기존 구독/연결 해제
-        if (sub) { sub.unsubscribe(); sub = null; }
-        if (stompClient && stompClient.connected) { stompClient.disconnect(() => {}); }
+                // /topic/events 구독
+                stompClient.subscribe('/topic/event', function (message) {
+                    const event = JSON.parse(message.body);
 
-        setStatus('연결 중...');
-        const socket = new SockJS('/ws-stomp');
-        stompClient = Stomp.over(socket);
-        // 로그 시끄러우면 끄기
-        stompClient.debug = null;
-
-        stompClient.connect({}, () => {
-            setStatus('연결됨');
-            const destination = `/topic/device/${id}`;
-            sub = stompClient.subscribe(destination, (message) => {
-                const payload = JSON.parse(message.body);
-                // 서버가 장비별 토픽으로만 쏘므로 별도 필터링은 불필요
-                prependEvent(payload);
+                    // deviceId가 현재 Device ID와 일치하는 데이터만 테이블에 표시
+                    if (event.deviceId === deviceId) {
+                        addRow(event);
+                    }
+                });
             });
-        }, (err) => {
-            console.error('STOMP error', err);
-            setStatus('오류(재시도 필요)');
-            // 간단 재시도 로직(3초 후)
-            setTimeout(() => connectAndSubscribe(id), 3000);
+        }
+
+        function addRow(event) {
+            const tbody = document.getElementById("eventTableBody");
+            const tr = document.createElement("tr");
+
+            const tdTime = document.createElement("td");
+            tdTime.textContent = event.eventTime || "-";
+
+            const tdUser = document.createElement("td");
+            tdUser.textContent = event.userName || "-";
+
+            const tdType = document.createElement("td");
+            tdType.textContent = event.accessType || "-";
+            tdType.style.fontWeight = "bold";
+            tdType.style.color = event.direction === "IN" ? "green" : "red";
+
+            const tdDevice = document.createElement("td");
+            tdDevice.textContent = event.deviceId || "-";
+
+            tr.appendChild(tdTime);
+            tr.appendChild(tdUser);
+            tr.appendChild(tdType);
+            tr.appendChild(tdDevice);
+
+            // 최근 데이터가 위로 올라오게 (최신순 정렬)
+            tbody.insertBefore(tr, tbody.firstChild);
+        }
+
+        // 관리자 설정 초기화 버튼 클릭 시
+        resetBtn.addEventListener("click", function () {
+            console.log("리셋 버튼 클릭 이벤트 발생 !! ");
+            if (confirm("Device ID를 초기화하고 관리자 설정 화면으로 이동하시겠습니까?")) {
+                localStorage.removeItem("DEVICE_ID");
+                alert("Device ID가 초기화되었습니다.");
+                window.location.href = "/setup/admin-password";
+            }
         });
-    }
-
-    // ----- 초기화 -----
-    (function init() {
-        const saved = localStorage.getItem(LS_KEY);
-        if (saved) {
-            deviceId = saved;
-            deviceIdInput.value = deviceId;
-            setCurrentDeviceId(deviceId);
-            connectAndSubscribe(deviceId);
-        }
-    })();
-
-    // ----- 이벤트 바인딩 -----
-    saveBtn.addEventListener('click', () => {
-        const id = (deviceIdInput.value || '').trim();
-        if (!id) {
-            alert('장비 ID를 입력하세요.');
-            return;
-        }
-        deviceId = id;
-        localStorage.setItem(LS_KEY, id);
-        setCurrentDeviceId(id);
-        connectAndSubscribe(id);
-    });
-
-    clearBtn.addEventListener('click', () => {
-        localStorage.removeItem(LS_KEY);
-        deviceId = null;
-        setCurrentDeviceId(null);
-        deviceIdInput.value = '';
-        setStatus('대기 중');
-        if (sub) { sub.unsubscribe(); sub = null; }
-        if (stompClient && stompClient.connected) stompClient.disconnect(() => {});
-        eventsDiv.innerHTML = '<div class="empty">아직 수신된 이벤트가 없습니다.</div>';
-    });
-</script>
+    </script>
 </body>
 </html>

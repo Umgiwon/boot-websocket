@@ -11,22 +11,16 @@ public class ViewController {
      * 관리자 비밀번호 입력 화면으로 리다이렉트
      */
     @GetMapping("/")
-    public String root() {
-        return "redirect:/setup/admin-password";
+    public String indexPage() {
+        return "/index";
     }
-
-//    @GetMapping("/")
-//    public String root() {
-//        return "redirect:/main";
-//    }
-
 
     /**
      * 관리자 비밀번호 입력 화면
      */
     @GetMapping("/setup/admin-password")
     public String adminPasswordPage() {
-        return "setup/admin-password";
+        return "/setup/admin-password";
     }
 
     /**
@@ -34,7 +28,7 @@ public class ViewController {
      */
     @GetMapping("/setup/device-id")
     public String deviceIdPage() {
-        return "setup/device-id";
+        return "/setup/device-id";
     }
 
     /**
