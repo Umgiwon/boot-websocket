@@ -12,6 +12,7 @@ public class AdminAuthService {
 
     /**
      * 설정된 비밀번호와 일치하는지 검증
+     *
      * @param inputPassword 입력된 비밀번호
      * @return 일치여부
      */
