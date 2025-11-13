@@ -20,11 +20,7 @@ public class TagEventComponent {
      * 각 장비에 데이터 전송
      */
     public void publish(DoorEventDto dto) {
-
-        log.info("DoorEventDto : {}", dto.toString());
-
-//        String destination = "/topic/event/" + dto.getDeviceId();
-//        messagingTemplate.convertAndSend(destination, dto);
-        messagingTemplate.convertAndSend("/topic/event", dto);
+        String destination = "/sub/device/" + dto.getDeviceId();
+        messagingTemplate.convertAndSend(destination, dto);
     }
 }

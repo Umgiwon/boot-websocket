@@ -51,7 +51,7 @@
 
     <script>
         let stompClient = null;
-        const deviceId = localStorage.getItem("DEVICE_ID");
+        const deviceId = localStorage.getItem("deviceId");
         const currentDeviceIdSpan = document.getElementById("currentDeviceId");
         const resetBtn = document.getElementById("resetBtn");
 
@@ -72,8 +72,8 @@
             stompClient.connect({}, function (frame) {
                 console.log('Connected: ' + frame);
 
-                // /topic/events 구독
-                stompClient.subscribe('/topic/event', function (message) {
+                // /sub/events 구독
+                stompClient.subscribe('/sub/event', function (message) {
                     const event = JSON.parse(message.body);
 
                     // deviceId가 현재 Device ID와 일치하는 데이터만 테이블에 표시
@@ -115,7 +115,7 @@
         resetBtn.addEventListener("click", function () {
             console.log("리셋 버튼 클릭 이벤트 발생 !! ");
             if (confirm("Device ID를 초기화하고 관리자 설정 화면으로 이동하시겠습니까?")) {
-                localStorage.removeItem("DEVICE_ID");
+                localStorage.removeItem("deviceId");
                 alert("Device ID가 초기화되었습니다.");
                 window.location.href = "/setup/admin-password";
             }

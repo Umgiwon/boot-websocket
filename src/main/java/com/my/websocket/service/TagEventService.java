@@ -20,14 +20,5 @@ public class TagEventService {
 
         // TODO Sitecube 데이터 받아서 처리
         tagEventPublisher.publish(doorEventDto);
-//        try {
-//            DoorEventDto dto = DoorEventDto.builder()
-//                    .deviceId(doorEventDto.getDeviceId())
-//                    .build();
-//
-//            tagEventPublisher.publish(dto);
-//        } catch (Exception e) {
-//            log.error("taggingPublish error : {}", e.getMessage());
-//        }
     }
 }
