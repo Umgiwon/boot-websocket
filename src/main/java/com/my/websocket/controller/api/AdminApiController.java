@@ -31,7 +31,7 @@ public class AdminApiController {
 
         // 비밀번호 검증
         return adminAuthService.validatePassword(reqDto.getPassword())
-                ? ResponseEntity.status(HttpStatus.OK).body("{\"success\":true}")
-                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("{\"success\": false, \"message\": \"비밀번호가 올바르지 않습니다.\"}");
+                ? ResponseEntity.ok().build()
+                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
 }

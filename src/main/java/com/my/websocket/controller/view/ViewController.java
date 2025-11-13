@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class ViewController {
 
-
     /**
      * 관리자 비밀번호 입력 화면으로 리다이렉트
      */
