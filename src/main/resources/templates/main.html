@@ -58,7 +58,7 @@
     const toastEl  = document.getElementById('toast');
 
     /* Device ID 체크 */
-    const deviceId = localStorage.getItem('DEVICE_ID');
+    const deviceId = localStorage.getItem('deviceId');
     if (!deviceId) {
         alert('Door(Device) ID가 설정되지 않았습니다.');
         window.location.href = '/setup/admin-password';

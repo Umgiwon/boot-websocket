@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 내부에서 호출하는 비밀번호 검증용 API
+ */
 @RestController
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
