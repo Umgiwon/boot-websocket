@@ -2,244 +2,204 @@
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <title>실시간 출입 현황</title>
-
+    <title>실시간 출입 대기화면</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <!-- SockJS / STOMP -->
     <script th:src="@{/common/js/sockjs.min.js}"></script>
     <script th:src="@{/common/js/stomp.min.js}"></script>
-
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 16px; }
-        h2 { margin: 0 0 10px 0; }
-        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-        th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
-        #toolbar { margin-bottom: 10px; display: flex; gap: 12px; justify-content: space-between; align-items: center; }
-        #left { display: flex; align-items: center; gap: 12px; }
-        #status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #ddd; background: #f6f7f9; color: #333; }
-        #status.connected { background: #e8f5e9; color: #1b5e20; border-color: #c8e6c9; }
-        #status.disconnected { background: #ffebee; color: #b71c1c; border-color: #ffcdd2; }
-        #resetBtn { background-color: #f44336; color: white; border: none; padding: 6px 10px; cursor: pointer; border-radius: 6px; }
-        #resetBtn:hover { background-color: #d32f2f; }
-        .muted { color: #666; font-size: 13px; }
-        .tag { display: inline-block; background: #eef2ff; color: #1e40af; border: 1px solid #c7d2fe; padding: 2px 6px; border-radius: 6px; font-size: 12px; }
-        .in { color: green; font-weight: 700; }
-        .out { color: #d32f2f; font-weight: 700; }
+        html, body { margin:0; height:100%; }
+        body { font-family: -apple-system, system-ui, sans-serif; background:#000; overflow:hidden; }
+        /* 배경(샘플, 필요시 이미지 교체) */
+        .bg { position:absolute; inset:0; background: radial-gradient(120% 120% at 50% 80%, #1e40af 0%, #000 60%); }
+        /* 로고 자리 */
+        .logo-box {
+            position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            width:240px; height:120px; background: rgba(0,0,0,.6); border-radius:12px;
+            display:flex; align-items:center; justify-content:center; color:#ff5353; font-size:28px; font-weight:800;
+        }
+        /* 상태 배지 */
+        .status { position:absolute; top:14px; left:14px; background:rgba(255,255,255,.08); color:#e5e7eb;
+            padding:6px 10px; border-radius:999px; font-size:12px; border:1px solid rgba(255,255,255,.15);}
+        .status.ok { background:rgba(34,197,94,.15); color:#bbf7d0; border-color:rgba(34,197,94,.35); }
+        /* IN/OUT 토스트 */
+        .toast {
+            position:absolute; bottom:42px; left:50%; transform:translateX(-50%);
+            min-width: 220px; padding: 24px 36px; border-radius: 16px;
+            background: linear-gradient(160deg,#22c55e,#16a34a);
+            color:#fff; font-size:48px; font-weight:900; letter-spacing:2px;
+            box-shadow: 0 10px 30px rgba(0,0,0,.35);
+            opacity:0; pointer-events:none; transition: opacity .25s ease;
+        }
+        .toast.show { opacity:1; }
+        /* 롱프레스 힌트 */
+        .hint {
+            position:absolute; top:14px; right:14px; color:#9ca3af; font-size:12px; background:rgba(255,255,255,.06);
+            border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:6px 10px;
+        }
     </style>
 </head>
 <body>
-<div id="toolbar">
-    <div id="left">
-        <h2>실시간 출입 현황</h2>
-        <span id="status" class="disconnected">연결 대기</span>
-    </div>
-    <button id="resetBtn">관리자 설정 초기화</button>
-</div>
-
-<p class="muted">
-    현재 설정된 Device ID: <strong id="currentDeviceId" class="tag"></strong>
-</p>
-
-<table>
-    <thead>
-    <tr>
-        <th>시간</th>
-        <th>이름</th>
-        <th>구분 (IN/OUT)</th>
-        <th>장비 ID</th>
-    </tr>
-    </thead>
-    <tbody id="eventTableBody">
-    <!-- 데이터 표시 영역 -->
-    </tbody>
-</table>
+<div class="bg"></div>
+<div class="status" id="status">연결 대기</div>
+<div class="hint">길게 누르면 관리자 설정</div>
+<div class="logo-box">로고 자리</div>
+<div class="toast" id="toast">IN</div>
 
 <script>
-    // ====== 전역 상태 ======
-    let stompClient = null;
-    let reconnectAttempt = 0;
-    const MAX_BACKOFF = 30000; // 30초
+    /* 기본 키 */
     const WS_ENDPOINT = '/ws';
+    const BROKER_PREFIX = '/sub';
     const HEARTBEAT_MS = 30000;
+    const MAX_BACKOFF = 30000;
 
-    const deviceId = localStorage.getItem("deviceId");
-    const SUB_DEST = deviceId ? `/sub/device/${deviceId}` : null;
+    /* 전역변수 설정 */
+    const statusEl = document.getElementById('status');
+    const toastEl  = document.getElementById('toast');
 
-    const currentDeviceIdSpan = document.getElementById("currentDeviceId");
-    const resetBtn = document.getElementById("resetBtn");
-    const statusBadge = document.getElementById("status");
-
-    // 표시
-    currentDeviceIdSpan.textContent = deviceId ? deviceId : "(미설정)";
-
-    // 장비 미설정 → 설정 화면 이동
+    /* Device ID 체크 */
+    const deviceId = localStorage.getItem('DEVICE_ID');
     if (!deviceId) {
-        alert("Device ID가 설정되지 않았습니다. 설정 화면으로 이동합니다.");
-        window.location.href = "/setup/admin-password";
-    } else {
-        connect(); // 연결 시작
+        alert('Door(Device) ID가 설정되지 않았습니다.');
+        window.location.href = '/setup/admin-password';
     }
 
-    // ====== 연결 함수 ======
+    /* STOMP 연결 */
+    let stompClient = null;
+    let reconnectAttempt = 0;
+
+    /* 상태값 표시 함수 */
+    function setStatus(ok, text) {
+        statusEl.classList.toggle('ok', !!ok);
+        statusEl.textContent = text || (ok ? '연결됨' : '연결 끊김');
+    }
+
+    /* 웹소켓 연결 함수 */
     function connect() {
-        // 이미 연결되어 있다면 중복 연결 방지
+        // 이미 연결된 경우 중복 연결 방지
         if (stompClient && stompClient.connected) return;
 
-        const socket = new SockJS(WS_ENDPOINT);
+        const socket = new SockJS(`${WS_ENDPOINT}?deviceId=${encodeURIComponent(deviceId)}`);
         const client = Stomp.over(socket);
 
-        // 디버깅 로그 비활성화 (필요 시 주석 처리)
+        // 로그 끄기(필요시 주석 처리)
         // client.debug = null;
 
         // STOMP 하트비트 설정 (핑퐁으로 연결 유지)
         client.heartbeat.outgoing = HEARTBEAT_MS; // 클라이언트 → 서버
         client.heartbeat.incoming = HEARTBEAT_MS; // 서버 → 클라이언트
 
-        // onConnect / onError 콜백
         const onConnect = () => {
             stompClient = client;
-            setStatus(true, "연결됨");
-            reconnectAttempt = 0; // 성공 시 백오프 초기화
+            setStatus(true, '연결됨');
+            reconnectAttempt = 0;
 
             // *** 디바이스 단위 토픽만 구독 ***
-            stompClient.subscribe(SUB_DEST, (message) => {
+            const dest = `${BROKER_PREFIX}/device/${deviceId}`;
+            console.log('[WS] subscribe:', dest);
+            stompClient.subscribe(dest, (message) => {
                 try {
-                    const event = JSON.parse(message.body);
-                    addRow({
-                        eventTime: event.eventTime,
-                        userName: event.userName,
-                        direction: (event.accessType || '').toUpperCase(),
-                        deviceId: event.deviceId
-                    });
+                    const payload = JSON.parse(message.body);
+                    // direction 우선, 없으면 accessType(0/1) 매핑
+                    // TODO: IN / OUT 설정
+                    showDirection(toDirection(payload));
                 } catch (e) {
-                    console.error("메시지 파싱 오류:", e, message.body);
+                    console.error('parse error', e, message.body);
                 }
             });
         };
 
+        // 애러 처리
         const onError = (err) => {
             console.error("STOMP 오류:", err);
-            setStatus(false, "연결 끊김 - 재연결 시도중");
+            setStatus(false, '연결 끊김 - 재연결 시도중');
             scheduleReconnect();
         };
 
         // 소켓 레벨 close도 캐치해서 재연결
         socket.onclose = () => {
-            setStatus(false, "연결 종료 - 재연결 시도중");
+            setStatus(false, '연결 종료 - 재연결 시도중');
             scheduleReconnect();
         };
 
         client.connect({}, onConnect, onError);
     }
 
-    // ====== 재연결 스케줄러 (지수 백오프) ======
+    /* 재연결 스케줄러 (지수 백오프) */
     function scheduleReconnect() {
         // 페이지가 숨김 상태이면, 사용자에게 보일 때 재연결 시도 (불필요한 트래픽 방지)
         if (document.hidden) {
             // 가시화될 때 한 번만 연결 시도
-            const handler = () => {
-                document.removeEventListener('visibilitychange', handler);
+            const v = () => {
+                document.removeEventListener('visibilitychange', v);
                 if (!stompClient || !stompClient.connected) connect();
             };
-            document.addEventListener('visibilitychange', handler);
+            document.addEventListener('visibilitychange', v);
             return;
         }
 
         // 네트워크 오프라인일 경우, 온라인 이벤트 이후 시도
         if (!navigator.onLine) {
-            const onlineHandler = () => {
-                window.removeEventListener('online', onlineHandler);
-                connect();
-            };
-            window.addEventListener('online', onlineHandler);
+            const h = () => { window.removeEventListener('online', h); connect(); };
+            window.addEventListener('online', h);
             return;
         }
 
         // 백오프 계산 (최대 30초)
-        reconnectAttempt += 1;
+        reconnectAttempt++;
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_BACKOFF);
         console.warn(`재연결 ${reconnectAttempt}회차, ${Math.floor(delay/1000)}초 후 시도`);
         setTimeout(connect, delay);
     }
 
-    // ====== 상태 표시 ======
-    function setStatus(connected, text) {
-        statusBadge.textContent = text || (connected ? "연결됨" : "연결 끊김");
-        statusBadge.classList.toggle('connected', connected);
-        statusBadge.classList.toggle('disconnected', !connected);
+    /* TODO: IN / OUT 설정 */
+    function toDirection(e) {
+        if (e && e.direction) return String(e.direction).toUpperCase();
+        const at = e?.accessType;
+        if (at === 1 || at === "1") return "IN";
+        if (at === 0 || at === "0") return "OUT";
+        return "";
     }
 
-    // ====== 행 추가 ======
-    function addRow(event) {
-        const tbody = document.getElementById("eventTableBody");
-        const tr = document.createElement("tr");
-
-        // 시간 표시: 서버가 문자열 ISO를 주면 그대로, 없으면 현재 로컬 시간
-        const tdTime = document.createElement("td");
-        tdTime.textContent = event.eventTime || new Date().toLocaleString();
-
-        const tdUser = document.createElement("td");
-        tdUser.textContent = event.userName || "-";
-
-        const tdType = document.createElement("td");
-        const dir = (event.direction || '').toUpperCase();
-        tdType.textContent = dir || "-";
-        tdType.className = dir === "IN" ? "in" : (dir === "OUT" ? "out" : "");
-
-        const tdDevice = document.createElement("td");
-        tdDevice.textContent = event.deviceId || "-";
-
-        tr.appendChild(tdTime);
-        tr.appendChild(tdUser);
-        tr.appendChild(tdType);
-        tr.appendChild(tdDevice);
-
-        // 최신 데이터가 위로 오도록
-        tbody.insertBefore(tr, tbody.firstChild);
+    // 큼직한 IN/OUT 토스트 1.6초 표시
+    let toastTimer = null;
+    function showDirection(dir) {
+        if (!dir) return;
+        toastEl.textContent = dir === 'IN' ? 'IN' : 'OUT';
+        // IN/OUT 동일 색상(요구사항: IN/OUT만 보여주면 됨) — 필요 시 색 분리 가능
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
     }
 
-    // ====== 관리자 설정 초기화 ======
-    resetBtn.addEventListener("click", function () {
-        if (confirm("Device ID를 초기화하고 관리자 설정 화면으로 이동하시겠습니까?")) {
-            localStorage.removeItem("deviceId");
-            alert("Device ID가 초기화되었습니다.");
-            // 연결 종료 후 이동
-            safeDisconnect(() => {
-                window.location.href = "/setup/admin-password";
-            });
-        }
-    });
-
-    // ====== 페이지 이탈 시 깨끗한 종료 ======
-    window.addEventListener('beforeunload', () => {
-        // 즉시 이동해야 하는 경우엔 굳이 기다리지 않아도 됨
-        safeDisconnect();
-    });
-
-    function safeDisconnect(cb) {
-        try {
-            if (stompClient && stompClient.connected) {
-                stompClient.disconnect(() => {
-                    setStatus(false, "연결 종료");
-                    if (typeof cb === 'function') cb();
-                });
-            } else if (typeof cb === 'function') {
-                cb();
-            }
-        } catch (e) {
-            console.warn("disconnect 중 오류:", e);
-            if (typeof cb === 'function') cb();
-        }
+    /* 롱프레스 제스처 → 관리자 인증 화면 이동 */
+    let pressTimer = null;
+    const LONG_MS = 1200; // 1.2초 눌렀을 때 트리거
+    function startPress() {
+        clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+            // 안전하게 연결 종료 후 이동
+            try {
+                if (stompClient && stompClient.connected) stompClient.disconnect();
+            } catch(e){}
+            window.location.href = '/setup/admin-password';
+        }, LONG_MS);
     }
+    function cancelPress() { clearTimeout(pressTimer); }
 
-    // ====== 보조: 오프라인/온라인 표시 & 자동 조치 ======
-    window.addEventListener('offline', () => {
-        setStatus(false, "오프라인 - 네트워크 복구 대기");
-    });
-    window.addEventListener('online', () => {
-        if (!stompClient || !stompClient.connected) {
-            setStatus(false, "온라인 - 재연결 시도중");
-            connect();
-        }
+    // 모바일 터치 + 데스크톱 마우스 모두 지원
+    document.addEventListener('touchstart', startPress, {passive:true});
+    document.addEventListener('touchend', cancelPress);
+    document.addEventListener('mousedown', startPress);
+    document.addEventListener('mouseup', cancelPress);
+    document.addEventListener('mouseleave', cancelPress);
+
+    // 페이지 진입 시 연결
+    connect();
+
+    window.addEventListener('offline', () => setStatus(false, '오프라인 - 복구 대기'));
+    window.addEventListener('online',  () => {
+        if (!stompClient || !stompClient.connected) { setStatus(false, '온라인 - 재연결 시도'); connect(); }
     });
 </script>
 </body>

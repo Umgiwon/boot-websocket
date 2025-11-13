@@ -2,32 +2,51 @@
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <title>Device ID 설정</title>
+    <title>Door ID 설정 - ID 입력</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { margin:0; font-family: -apple-system, system-ui, sans-serif; background:#f7f9fc; }
+        .wrap { max-width: 420px; margin: 28px auto; padding: 20px; }
+        .header { background:#122b67; color:#fff; padding:14px 16px; border-radius:10px; font-weight:700; }
+        .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; margin-top:14px; }
+        .label { color:#111827; font-size:18px; font-weight:700; margin-bottom:8px; }
+        .desc { color:#6b7280; font-size:14px; margin-bottom:12px; }
+        input[type=text] { width:100%; padding:12px 14px; border:1px solid #cbd5e1; border-radius:8px; outline:none; }
+        input[type=text]:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
+        .btn { margin-top:16px; width:100%; padding:14px 16px; background:#0a2a70; color:#fff; border:none; border-radius:10px; font-weight:700; cursor:pointer; }
+        .btn:active { transform: translateY(1px); }
+    </style>
 </head>
 <body>
-    <h2>Device ID 입력</h2>
-    <p>Device ID 설정값을 입력해주세요.</p>
-
-    <input type="text" id="deviceIdInput" placeholder="Device ID를 입력하세요">
-    <button id="confirmBtn">확인</button>
+    <div class="wrap">
+        <div class="header">Door ID 설정</div>
+        <div class="card">
+            <div class="label">Door ID 입력</div>
+            <div class="desc">Door ID 설정값을 입력해주세요.</div>
+            <input id="deviceId" type="text" placeholder="Door ID를 입력하세요" autocomplete="off" />
+            <button class="btn" id="okBtn">확인</button>
+        </div>
+    </div>
 
     <script>
-        const confirmBtn = document.getElementById("confirmBtn");
-        const deviceIdInput = document.getElementById("deviceIdInput");
+        /* 전역변수 설정 */
+        const input = document.getElementById('deviceId');
+        const okBtn = document.getElementById('okBtn');
 
-        confirmBtn.addEventListener("click", function () {
-            const deviceId = deviceIdInput.value.trim();
+        /* 기존 설정값이 있으면 표시 */
+        const prev = localStorage.getItem('deviceId');
+        if (prev) input.value = prev;
 
-            if (!deviceId) {
-                alert("Device ID를 입력해주세요.");
-                return;
-            }
+        /* 확인버튼 클릭 시 localStorage에 저장 후 메인화면 이동 */
+        okBtn.addEventListener('click', () => {
 
-            // Device ID를 브라우저에 저장 (localStorage)
-            localStorage.setItem("deviceId", deviceId);
+            // validation
+            const inputValue = (input.value || '').trim();
+            if (!inputValue) { input.focus(); return; }
 
-            // 메인 화면으로 이동
-            window.location.href = "/main";
+            // 로컬 저장 후 메인으로
+            localStorage.setItem('deviceId', inputValue);
+            window.location.href = '/';
         });
     </script>
 </body>
